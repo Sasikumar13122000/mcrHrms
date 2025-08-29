@@ -1,0 +1,24 @@
+pluginManagement {
+    def flutterSdkPath = new File(settingsDir, "local.properties")
+            .withReader("UTF-8") { reader ->
+                def props = new Properties()
+                props.load(reader)
+                return props.getProperty("flutter.sdk")
+            }
+
+    includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+plugins {
+    id "dev.flutter.flutter-plugin-loader"
+    id "com.android.application" version "8.3.2" apply false
+    id "org.jetbrains.kotlin.android" version "1.9.22" apply false
+}
+
+include(":app")
