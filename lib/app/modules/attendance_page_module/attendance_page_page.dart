@@ -55,11 +55,11 @@ class AttendancePagePage extends GetView<AttendancePageController> {
                   color: Colors.white.withOpacity(0.8),
                   child: Column(
                     children: [
-                      _infoRow('Current Date', controllermain.getcurrendate,
+                      _infoRow('Current Date',controllermain.getcurrendate,
                           width, height),
-                      _infoRow('Login Time', controllermain.sessionLoginTime,
+                      _infoRow('Login Time',controllermain.sessionLoginTime,
                           width, height),
-                      _infoRow('Start Time', controllermain.StartTime, width,
+                      _infoRow('Start Time',controllermain.StartTime, width,
                           height),
                       _infoRow(
                           'Name',

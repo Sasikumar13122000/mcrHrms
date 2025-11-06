@@ -35,6 +35,7 @@ class AttendancePageController extends GetxController {
   var sessionEmpId = '';
   var sessionidentifier = '';
   var actualDocNoFromStartAttendance = '';
+  List<dynamic> allowedLocations = [];
 
   Completer<GoogleMapController> controller = Completer();
 
@@ -74,6 +75,22 @@ class AttendancePageController extends GetxController {
     sessionidentifier = prefs.getString('identifier').toString();
     sessionLoginTime = prefs.getString('LoginTime').toString();
     sessiondistance = prefs.getString('Distance').toString();
+
+    String? locJson = prefs.getString('Locations');
+    if (locJson != null && locJson.isNotEmpty) {
+      try {
+        allowedLocations = jsonDecode(locJson);
+        print("✅ Parsed multiple office locations: ${allowedLocations.length}");
+        print("✅   sessionLat sessionLat: ${sessionLat}");
+        print("✅ Parsed  sessionLong sessionLong: ${sessionLong}");
+        print("✅ Parsed multiple office locations: ${allowedLocations.toString()}");
+      } catch (e) {
+        print("❌ Error parsing Locations JSON: $e");
+      }
+    } else {
+      print("⚠️ No multiple office locations found in session.");
+    }
+
     update();
     await checkPermissionAndFetchLocation();
     print("distancesasas::"+sessiondistance);
@@ -148,58 +165,117 @@ class AttendancePageController extends GetxController {
   }
 
   Future<void> distancecculator(String formid) async {
+    try {
+      // Get current position
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
 
-    // Get current position
-    Position position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
+      print("📍 Current Location: ${position.latitude}, ${position.longitude}");
 
+      bool isInsideAnyLocation = false;
 
+      for (var loc in allowedLocations) {
+        double officeLat = double.tryParse(loc['Lat'].toString()) ?? 0.0;
+        double officeLng = double.tryParse(loc['Long'].toString()) ?? 0.0;
+        double allowedRadius = double.tryParse(loc['Distance'].toString()) ?? 100.0;
 
-    validateAttendance(
-      officeLat: double.parse(sessionLat),
-      officeLng: double.parse(sessionLong),
-      currentLat: position.latitude,
-      currentLng: position.longitude,
-      formid: formid
-    );
-  }
+        double distance = _calculateDistance(
+          officeLat,
+          officeLng,
+          position.latitude,
+          position.longitude,
+        );
 
-  void validateAttendance({
-    required double officeLat,
-    required double officeLng,
-    required double currentLat,
-    required double currentLng,
-    required String formid,
-    double ? allowedRadius ,
-  }) {
+        print("📍 Checking ${loc['Location']} -> Distance: ${distance.toStringAsFixed(2)} m (Allowed: $allowedRadius m)");
 
-    double effectiveRadius =
-        double.tryParse(sessiondistance ?? '100') ?? 100;
+        if (distance <= allowedRadius) {
+          print("✅ Inside location: ${loc['Location']}");
+          isInsideAnyLocation = true;
 
-
-    double distance = _calculateDistance(
-      officeLat,
-      officeLng,
-      currentLat,
-      currentLng,
-    );
-    print("SASASdistance::${distance}");
-    print("SASASallowedRadius::${effectiveRadius}");
-    print("effectiveRadius::${effectiveRadius}");
-    if (distance <= effectiveRadius){
-      print("You are inside the office ✅ ");
-
-      if(formid=="1"){
-        startattendance();
-      }else if (formid=="2"){
-        stopattendance();
+          // ✅ Pass the matched location info to attendance
+          if (formid == "1") {
+            startattendancee(
+              matchedLocationName: loc['Location'].toString(),
+              matchedLat: officeLat,
+              matchedLong: officeLng,
+            );
+          } else if (formid == "2") {
+            stopattendance(
+              matchedLocationName: loc['Location'].toString(),
+              matchedLat: officeLat,
+              matchedLong: officeLng,
+            );
+          }
+          break;
+        }
       }
-    } else {
-      Utilities.alertsnackBar('Opps...!', 'You Are Too Far from Our Office Location', 2);
-      print("Go inside the office ❌");
+
+      if (!isInsideAnyLocation) {
+        Utilities.alertsnackBar('Opps...!', 'You Are Too Far from Any Office Location', 2);
+        print("❌ Not inside any allowed office location");
+      }
+    } catch (e) {
+      print("⚠️ Error in distancecculator: $e");
     }
   }
+
+
+  //old
+
+  // Future<void> distancecculator(String formid) async {
+  //
+  //   // Get current position
+  //   Position position = await Geolocator.getCurrentPosition(
+  //     desiredAccuracy: LocationAccuracy.high,
+  //   );
+  //
+  //
+  //
+  //   validateAttendance(
+  //     officeLat: double.parse(sessionLat),
+  //     officeLng: double.parse(sessionLong),
+  //     currentLat: position.latitude,
+  //     currentLng: position.longitude,
+  //     formid: formid
+  //   );
+  // }
+  //
+  // void validateAttendance({
+  //   required double officeLat,
+  //   required double officeLng,
+  //   required double currentLat,
+  //   required double currentLng,
+  //   required String formid,
+  //   double ? allowedRadius ,
+  // }) {
+  //
+  //   double effectiveRadius =
+  //       double.tryParse(sessiondistance ?? '100') ?? 100;
+  //
+  //
+  //   double distance = _calculateDistance(
+  //     officeLat,
+  //     officeLng,
+  //     currentLat,
+  //     currentLng,
+  //   );
+  //   print("SASASdistance::${distance}");
+  //   print("SASASallowedRadius::${effectiveRadius}");
+  //   print("effectiveRadius::${effectiveRadius}");
+  //   if (distance <= effectiveRadius){
+  //     print("You are inside the office ✅ ");
+  //
+  //     if(formid=="1"){
+  //       startattendancee();
+  //     }else if (formid=="2"){
+  //       stopattendance();
+  //     }
+  //   } else {
+  //     Utilities.alertsnackBar('Opps...!', 'You Are Too Far from Our Office Location', 2);
+  //     print("Go inside the office ❌");
+  //   }
+  // }
 
 
 
@@ -285,53 +361,116 @@ class AttendancePageController extends GetxController {
   }
 
 
-  Future<void> startattendancee() async {
-    print("You are inside the startattendancee ✅ ");
-    Map<String, dynamic> startData = {
-      "formid": 1,
-      "name": sessionName,
-      "empId": sessionUseId,
-      "date": "$getcurrendate $getintime",
-      "day": "$getcurrendate $getintime",
-      "frmlatlong": "$insetlat,$insetlon",
-      "fromplace": insetAddress.toString(),
-      "tolatlng": '',
-      "toplace": '',
-      "totaldistance": '',
-      "month": '',
-      "remarks": attendanceRemarks.text,
-      "createby": sessionUseId,
-      "modifiedBy": '',
-      "approvestatus": '0',
-      "locationtype": insetlocation.toString(),
-      "locationnanme": '',
-      "description": sessionidentifier,
-      "fromtime": getintime,
-      "totime": '',
-      "finalstatus": 'HalfDay',
-      "maxDocNo": ''
-    };
+  // Future<void> startattendancee() async {
+  //   print("You are inside the startattendancee ✅ ");
+  //   Map<String, dynamic> startData = {
+  //     "formid": 1,
+  //     "name": sessionName,
+  //     "empId": sessionUseId,
+  //     "date": "$getcurrendate $getintime",
+  //     "day": "$getcurrendate $getintime",
+  //     "frmlatlong": "$insetlat,$insetlon",
+  //     "fromplace": insetAddress.toString(),
+  //     "tolatlng": '',
+  //     "toplace": '',
+  //     "totaldistance": '',
+  //     "month": '',
+  //     "remarks": attendanceRemarks.text,
+  //     "createby": sessionUseId,
+  //     "modifiedBy": '',
+  //     "approvestatus": '0',
+  //     "locationtype": insetlocation.toString(),
+  //     "locationnanme": '',
+  //     "description": sessionidentifier,
+  //     "fromtime": getintime,
+  //     "totime": '',
+  //     "finalstatus": 'HalfDay',
+  //     "maxDocNo": ''
+  //   };
+  //
+  //   try {
+  //     final value = await Allapi.postattendance(
+  //       true,
+  //       1,
+  //       sessionName,
+  //       sessionUseId,
+  //       "$getcurrendate $getintime",
+  //       "$getcurrendate $getintime",
+  //       "$insetlat,$insetlon",
+  //       insetAddress.toString(),
+  //       '',
+  //       '',
+  //       '',
+  //       '',
+  //       attendanceRemarks.text,
+  //       sessionUseId,
+  //       '',
+  //       '0',
+  //       insetlocation.toString(),
+  //       '',
+  //       sessionidentifier,
+  //       getintime,
+  //       '',
+  //       'HalfDay',
+  //       '',
+  //     );
+  //
+  //     if (value.statusCode == 200) {
+  //       var res = jsonDecode(value.body);
+  //       checkStatus = res['status'] == 0 ? false : true;
+  //
+  //       if (!checkStatus) {
+  //         Utilities.alertsnackBar('Error', res['result'].toString(), 2);
+  //       } else {
+  //         if (res['result'] is List && res['result'].isNotEmpty) {
+  //           Utilities.showDialaogboxSavedMessage(
+  //             Get.context!, //  Use Get.context safely
+  //             res['result'][0]['STATUSNAME'].toString(),
+  //             'Success',
+  //           );
+  //           Future.delayed(const Duration(seconds: 2), () {
+  //             Get.offAllNamed('/dash_bard');
+  //           });
+  //           checkattendance();
+  //         } else {
+  //           Utilities.alertsnackBar('Error', 'Invalid response format', 2);
+  //         }
+  //       }
+  //       update(); // refresh controller observers
+  //     }
+  //   } catch (e) {
+  //     Utilities.alertsnackBar('Error', e.toString(), 2);
+  //   }
+  // }
+
+
+  Future<void> startattendancee({
+    required String matchedLocationName,
+    required double matchedLat,
+    required double matchedLong,
+  }) async {
+    print("You are inside the startattendancee ✅ for $matchedLocationName");
 
     try {
       final value = await Allapi.postattendance(
         true,
-        1,
+        1, // formid
         sessionName,
         sessionUseId,
         "$getcurrendate $getintime",
         "$getcurrendate $getintime",
-        "$insetlat,$insetlon",
-        insetAddress.toString(),
-        '',
-        '',
+        "$insetlat,$insetlon", // actual user current location
+        insetAddress.toString(), // fromplace
+        "$matchedLat,$matchedLong", // tolatlng - official location
+        matchedLocationName, // toplace - official name
         '',
         '',
         attendanceRemarks.text,
         sessionUseId,
         '',
         '0',
-        insetlocation.toString(),
-        '',
+        insetlocation.toString(), // locationtype (current area)
+        matchedLocationName, // locationnanme (official site name)
         sessionidentifier,
         getintime,
         '',
@@ -348,91 +487,7 @@ class AttendancePageController extends GetxController {
         } else {
           if (res['result'] is List && res['result'].isNotEmpty) {
             Utilities.showDialaogboxSavedMessage(
-              Get.context!, // ✅ Use Get.context safely
-              res['result'][0]['STATUSNAME'].toString(),
-              'Success',
-            );
-            Future.delayed(const Duration(seconds: 2), () {
-              Get.offAllNamed('/dash_bard');
-            });
-            checkattendance();
-          } else {
-            Utilities.alertsnackBar('Error', 'Invalid response format', 2);
-          }
-        }
-        update(); // refresh controller observers
-      }
-    } catch (e) {
-      Utilities.alertsnackBar('Error', e.toString(), 2);
-    }
-  }
-
-
- // OLD
-
-  startattendance() async {
-    Map<String, dynamic> startData = {
-      "formid": 1,
-      "name": sessionName,
-      "empId": sessionUseId,
-      "date": "$getcurrendate $getintime",
-      "day": "$getcurrendate $getintime",
-      "frmlatlong": "$insetlat,$insetlon",
-      "fromplace": insetAddress.toString(),
-      "tolatlng": '',
-      "toplace": '',
-      "totaldistance": '',
-      "month": '',
-      "remarks": attendanceRemarks.text,
-      "createby": sessionUseId,
-      "modifiedBy": '',
-      "approvestatus": '0',
-      "locationtype": insetlocation.toString(),
-      "locationnanme": '',
-      "description": sessionidentifier,
-      "fromtime": getintime,
-      "totime": '',
-      "finalstatus": 'HalfDay',
-      "maxDocNo": ''
-    };
-
-    // log("START ATTENDANCE - Sending data: ${jsonEncode(startData)}");
-
-    Allapi.postattendance(
-      true,
-      1,
-      sessionName,
-      sessionUseId,
-      "$getcurrendate $getintime",
-      "$getcurrendate $getintime",
-      "$insetlat,$insetlon",
-      insetAddress.toString(),
-      '',
-      '',
-      '',
-      '',
-      attendanceRemarks.text,
-      sessionUseId,
-      '',
-      '0',
-      insetlocation.toString(),
-      '',
-      sessionidentifier,
-      getintime,
-      '',
-      'HalfDay',
-      '',
-    ).then((value) {
-      if (value.statusCode == 200) {
-        var res = jsonDecode(value.body);
-        checkStatus = res['status'] == 0 ? false : true;
-
-        if (!checkStatus) {
-          Utilities.alertsnackBar('Error', res['result'].toString(), 2);
-        } else {
-          if (res['result'] is List && res['result'].isNotEmpty) {
-            Utilities.showDialaogboxSavedMessage(
-              Get.context!, // ✅ Use Get.context safely
+              Get.context!,
               res['result'][0]['STATUSNAME'].toString(),
               'Success',
             );
@@ -446,56 +501,192 @@ class AttendancePageController extends GetxController {
         }
         update();
       }
-    });
+    } catch (e) {
+      Utilities.alertsnackBar('Error', e.toString(), 2);
+    }
   }
 
-  stopattendance(){
-    // if(ImagePath==""){
-    //   Utilities.showDialaogboxWarning(Get.context, "Add the selfie...", "Warning");
-    //
-    // }else{
-    Allapi.postattendance(true,//isloading,
-        2,// formid,
-        sessionName,//name,
-        sessionUseId,//empId,
-        getcurrendate,//date,
-        "$getcurrendate $getintime",//day,
-        "$insetlat,$insetlon",//frmlatlong,
-        insetAddress.toString(),//fromplace,
-        "$insetlat,$insetlon",//tolatlng,
-        insetAddress.toString(),//toplace,
-        '',//totaldistance,
-        '',//month,
-        attendanceRemarks.text,//remarks,
-        sessionUseId,//createby,
-        '',//modifiedBy,
-        '0',//approvestatus,
-        insetlocation.toString(),//locationtype,
-        insetlocation.toString(),//locationnanme,
-        '',//description,
-        getintime,//fromtime,
-        getintime,//totime,
-        'Present',//finalstatus
-        attendanceCloseDocNo.toString() // maxDocNo
-    ).then((value) => {
-      // log(value.body),
-      if(value.statusCode==200){
-        Utilities.closeLoader(),
-        checkStatus = jsonDecode(value.body)['status'] = 0,
-        if(checkStatus==false){
-          Utilities.alertsnackBar('Error','Somthing went wrong...',2),
-          //Utilities.closeLoader(),
-          update(),
-        }else{
-          // Utilities.alertsnackBar('Success',jsonDecode(value.body)['result'][0]['STATUSNAME'].toString(),3),
-          // log(jsonDecode(value.body)['result'][0]['STATUSNAME'].toString()),
-          Get.back(),
-          // log("Close...."),
-          //Utilities.closeLoader(),
-          update(),
+
+  // OLD
+
+  // startattendance() async {
+  //   Map<String, dynamic> startData = {
+  //     "formid": 1,
+  //     "name": sessionName,
+  //     "empId": sessionUseId,
+  //     "date": "$getcurrendate $getintime",
+  //     "day": "$getcurrendate $getintime",
+  //     "frmlatlong": "$insetlat,$insetlon",
+  //     "fromplace": insetAddress.toString(),
+  //     "tolatlng": '',
+  //     "toplace": '',
+  //     "totaldistance": '',
+  //     "month": '',
+  //     "remarks": attendanceRemarks.text,
+  //     "createby": sessionUseId,
+  //     "modifiedBy": '',
+  //     "approvestatus": '0',
+  //     "locationtype": insetlocation.toString(),
+  //     "locationnanme": '',
+  //     "description": sessionidentifier,
+  //     "fromtime": getintime,
+  //     "totime": '',
+  //     "finalstatus": 'HalfDay',
+  //     "maxDocNo": ''
+  //   };
+  //
+  //   // log("START ATTENDANCE - Sending data: ${jsonEncode(startData)}");
+  //
+  //   Allapi.postattendance(
+  //     true,
+  //     1,
+  //     sessionName,
+  //     sessionUseId,
+  //     "$getcurrendate $getintime",
+  //     "$getcurrendate $getintime",
+  //     "$insetlat,$insetlon",
+  //     insetAddress.toString(),
+  //     '',
+  //     '',
+  //     '',
+  //     '',
+  //     attendanceRemarks.text,
+  //     sessionUseId,
+  //     '',
+  //     '0',
+  //     insetlocation.toString(),
+  //     '',
+  //     sessionidentifier,
+  //     getintime,
+  //     '',
+  //     'HalfDay',
+  //     '',
+  //   ).then((value) {
+  //     if (value.statusCode == 200) {
+  //       var res = jsonDecode(value.body);
+  //       checkStatus = res['status'] == 0 ? false : true;
+  //
+  //       if (!checkStatus) {
+  //         Utilities.alertsnackBar('Error', res['result'].toString(), 2);
+  //       } else {
+  //         if (res['result'] is List && res['result'].isNotEmpty) {
+  //           Utilities.showDialaogboxSavedMessage(
+  //             Get.context!, // ✅ Use Get.context safely
+  //             res['result'][0]['STATUSNAME'].toString(),
+  //             'Success',
+  //           );
+  //           Future.delayed(const Duration(seconds: 2), () {
+  //             Get.offAllNamed('/dash_bard');
+  //           });
+  //           checkattendance();
+  //         } else {
+  //           Utilities.alertsnackBar('Error', 'Invalid response format', 2);
+  //         }
+  //       }
+  //       update();
+  //     }
+  //   });
+  // }
+
+  // stopattendance(){
+  //   // if(ImagePath==""){
+  //   //   Utilities.showDialaogboxWarning(Get.context, "Add the selfie...", "Warning");
+  //   //
+  //   // }else{
+  //   Allapi.postattendance(true,//isloading,
+  //       2,// formid,
+  //       sessionName,//name,
+  //       sessionUseId,//empId,
+  //       getcurrendate,//date,
+  //       "$getcurrendate $getintime",//day,
+  //       "$insetlat,$insetlon",//frmlatlong,
+  //       insetAddress.toString(),//fromplace,
+  //       "$insetlat,$insetlon",//tolatlng,
+  //       insetAddress.toString(),//toplace,
+  //       '',//totaldistance,
+  //       '',//month,
+  //       attendanceRemarks.text,//remarks,
+  //       sessionUseId,//createby,
+  //       '',//modifiedBy,
+  //       '0',//approvestatus,
+  //       insetlocation.toString(),//locationtype,
+  //       insetlocation.toString(),//locationnanme,
+  //       '',//description,
+  //       getintime,//fromtime,
+  //       getintime,//totime,
+  //       'Present',//finalstatus
+  //       attendanceCloseDocNo.toString() // maxDocNo
+  //   ).then((value) => {
+  //     // log(value.body),
+  //     if(value.statusCode==200){
+  //       Utilities.closeLoader(),
+  //       checkStatus = jsonDecode(value.body)['status'] = 0,
+  //       if(checkStatus==false){
+  //         Utilities.alertsnackBar('Error','Somthing went wrong...',2),
+  //         //Utilities.closeLoader(),
+  //         update(),
+  //       }else{
+  //         // Utilities.alertsnackBar('Success',jsonDecode(value.body)['result'][0]['STATUSNAME'].toString(),3),
+  //         // log(jsonDecode(value.body)['result'][0]['STATUSNAME'].toString()),
+  //         Get.back(),
+  //         // log("Close...."),
+  //         //Utilities.closeLoader(),
+  //         update(),
+  //       }
+  //     }
+  //   });
+  // }
+
+
+
+  Future<void> stopattendance({
+    required String matchedLocationName,
+    required double matchedLat,
+    required double matchedLong,
+  }) async {
+    print("You are inside the stopattendance ✅ for $matchedLocationName");
+
+    try {
+      final value = await Allapi.postattendance(
+        true, // isloading
+        2, // formid
+        sessionName, // name
+        sessionUseId, // empId
+        getcurrendate, // date
+        "$getcurrendate $getintime", // day
+        "$insetlat,$insetlon", // frmlatlong (user current)
+        insetAddress.toString(), // fromplace (user current address)
+        "$matchedLat,$matchedLong", // tolatlng (office)
+        matchedLocationName, // toplace
+        '', // totaldistance
+        '', // month
+        attendanceRemarks.text, // remarks
+        sessionUseId, // createby
+        '', // modifiedBy
+        '0', // approvestatus
+        insetlocation.toString(), // locationtype (current area)
+        matchedLocationName, // locationnanme (official site)
+        sessionidentifier, // description
+        getintime, // fromtime
+        getouttime, // totime
+        'Present', // finalstatus
+        attendanceCloseDocNo.toString(), // maxDocNo
+      );
+
+      if (value.statusCode == 200) {
+        var res = jsonDecode(value.body);
+        checkStatus = res['status'] == 0 ? false : true;
+
+        if (!checkStatus) {
+          Utilities.alertsnackBar('Error', res['result'].toString(), 2);
+        } else {
+          Get.back(); // Close the attendance screen
+          update();
         }
       }
-    });
+    } catch (e) {
+      Utilities.alertsnackBar('Error', e.toString(), 2);
+    }
   }
 
   Future<bool> locationpermisioncheck() async {
